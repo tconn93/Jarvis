@@ -21,7 +21,7 @@ import {
 } from "./audio.js";
 import { runToolLoop } from "./agent.js";
 import { askConfirmation, interpretAnswer } from "./confirm.js";
-import { createMcpSession, createDesktop } from "./tools/desktop.js";
+import { createBridge } from "./bridge/server.js";
 import { decide } from "./gate.js";
 import { createLoop } from "./loop.js";
 import { createLog } from "./log.js";
@@ -57,6 +57,7 @@ let dictionary = null;
 let voskFeed = null;
 let capture = null;
 let helper = null;
+let bridge = null;
 
 function surfDir() {
   return path.join(app.getPath("appData"), "Surf");
@@ -77,6 +78,11 @@ function publish() {
     confirm: confirmResolve ? { question: confirmQuestion } : null,
     error: errorText,
     play,
+    browser: {
+      connected: Boolean(bridge?.connected()),
+      code: bridge?.currentCode() ?? "",
+      port: bridge?.port() ?? 0,
+    },
   };
   if (win && !win.isDestroyed()) win.webContents.send("state", payload);
   return payload;
@@ -84,7 +90,7 @@ function publish() {
 
 function resize() {
   if (!win || win.isDestroyed()) return;
-  const height = needsSetup ? 300 : expanded ? 440 : 72;
+  const height = needsSetup ? 300 : expanded ? 480 : 72;
   const [width] = win.getSize();
   win.setSize(width || 320, height);
 }
@@ -196,6 +202,17 @@ async function ensureLoop() {
           foregroundTitle: "",
           desktop,
           signal,
+          browser: bridge?.connected()
+            ? {
+                call: (tool, args) => bridge.call(tool, args),
+                confirm,
+                log: activity,
+                onStep,
+                connected: () => bridge.connected(),
+                transcript,
+                cookieChoice: settings?.cookieChoice || "reject",
+              }
+            : null,
         });
       } finally {
         session.close();
@@ -319,7 +336,7 @@ function createWindow() {
   const position = settings?.windowPosition;
   win = new BrowserWindow({
     width: 320,
-    height: needsSetup ? 300 : expanded ? 440 : 72,
+    height: needsSetup ? 300 : expanded ? 480 : 72,
     x: position?.x,
     y: position?.y,
     frame: false,
@@ -357,12 +374,16 @@ async function quit() {
   await clips?.deleteAllClips().catch(() => {});
   helper?.stdin.write('{"type":"stop"}\n');
   helper?.kill();
+  await bridge?.close().catch(() => {});
   await capture?.setMuted(true).catch(() => {});
   app.quit();
 }
 
 app.whenReady().then(async () => {
   await fs.mkdir(surfDir(), { recursive: true });
+  if (!safeStorage.isEncryptionAvailable()) {
+    errorText = "No keyring is available, so the API key cannot be stored.";
+  }
   store = createSettingsStore({ dir: surfDir(), safeStorage });
   settings = await store.load();
   const keyReady = await store.readKey().then(
@@ -375,6 +396,12 @@ app.whenReady().then(async () => {
   tray = new Tray(trayImage());
   tray.setToolTip("Surf");
   rebuildTray();
+  try {
+    bridge = createBridge();
+    await bridge.start();
+  } catch (error) {
+    errorText = error.message;
+  }
   if (!needsSetup) {
     try {
       await ensureLoop();
@@ -389,6 +416,11 @@ app.whenReady().then(async () => {
 ipcMain.handle("get-state", () => publish());
 ipcMain.handle("submit-setup", async (_event, payload) => {
   try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      errorText = "No keyring is available, so the API key cannot be stored.";
+      publish();
+      return { ok: false, error: errorText };
+    }
     const modelDir = path.join(surfDir(), "models", "vosk");
     try {
       await ensureVoskModel({ dir: modelDir });
@@ -464,5 +496,14 @@ ipcMain.handle("playback-ended", (_event, id) => {
   }
 });
 ipcMain.handle("quit", () => quit());
+ipcMain.handle("pair-browser", () => {
+  if (!bridge) return publish();
+  bridge.beginPair();
+  return publish();
+});
+ipcMain.handle("disconnect-browser", () => {
+  bridge?.revoke();
+  return publish();
+});
 
 void hostPath;

@@ -56,7 +56,11 @@ async function extractZip(zipPath, dest) {
     ]);
     return;
   }
-  await execFileAsync("unzip", ["-o", zipPath, "-d", dest]);
+  try {
+    await execFileAsync("unzip", ["-o", zipPath, "-d", dest]);
+  } catch {
+    await execFileAsync("python3", ["-m", "zipfile", "-e", zipPath, dest]);
+  }
 }
 
 export async function ensureVoskModel({

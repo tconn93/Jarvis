@@ -16,11 +16,20 @@ if (window.surf || !new URLSearchParams(location.search).has("demo")) {
     confirm: null,
     error: "",
     play: null,
+    browser: { connected: false, code: "", port: 47321 },
   };
   let key = "";
   const listeners = new Set();
   let confirmResolve = null;
   let working = false;
+  let lastApp = "Notepad";
+
+  function appName(phrase, pattern) {
+    const match = phrase.match(pattern);
+    if (!match) return lastApp;
+    const name = match[1].replace(/[.?!]+$/, "").trim();
+    return name || lastApp;
+  }
 
   function emit() {
     const snapshot = {
@@ -73,9 +82,10 @@ if (window.surf || !new URLSearchParams(location.search).has("demo")) {
     working = true;
     emit();
     if (/^close\b/i.test(phrase)) {
+      const app = appName(phrase, /^close\s+(.+)/i);
       state.status = "waiting for yes";
-      state.confirm = { question: "Close Notepad?" };
-      stamp("said", "Close Notepad?");
+      state.confirm = { question: `Close ${app}?` };
+      stamp("said", `Close ${app}?`);
       emit();
       const yes = await new Promise((resolve) => {
         confirmResolve = resolve;
@@ -91,22 +101,25 @@ if (window.surf || !new URLSearchParams(location.search).has("demo")) {
         emit();
         return;
       }
-      state.now = ["Closed Notepad."];
-      stamp("step", "Closed Notepad.");
-      stamp("said", "Closed Notepad.");
+      state.now = [`Closed ${app}.`];
+      stamp("step", `Closed ${app}.`);
+      stamp("said", `Closed ${app}.`);
       state.status = "listening";
       emit();
       return;
     }
-    const step = /^type\b/i.test(phrase)
+    const typed = /^type\b/i.test(phrase);
+    const app = appName(phrase, /^(?:open|launch|start)\s+(.+)/i);
+    if (!typed) lastApp = app;
+    const step = typed
       ? `Typed ${phrase.replace(/^type\s+/i, "") || "the text"}.`
-      : "Launched Notepad.";
+      : `Launched ${app}.`;
     state.now = [step];
     stamp("step", step);
     emit();
     await wait(700);
     if (!working) return;
-    const said = /^type\b/i.test(phrase) ? "Typed that." : "Opened Notepad.";
+    const said = typed ? "Typed that." : `Opened ${app}.`;
     stamp("said", said);
     working = false;
     state.status = "speaking";
@@ -189,6 +202,14 @@ if (window.surf || !new URLSearchParams(location.search).has("demo")) {
     },
     async setVoice(voice) {
       state.voiceId = String(voice || "eve").trim() || "eve";
+      emit();
+    },
+    async pairBrowser() {
+      state.browser = { connected: false, code: "4F7K2M", port: 47321 };
+      emit();
+    },
+    async disconnectBrowser() {
+      state.browser = { connected: false, code: "", port: 47321 };
       emit();
     },
     async quit() {},

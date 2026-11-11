@@ -51,6 +51,7 @@ export function createSettingsStore({ dir, safeStorage, fs: fsImpl = fs }) {
       voiceId: data.voiceId || "eve",
       expanded: Boolean(data.expanded),
       windowPosition: data.windowPosition ?? null,
+      cookieChoice: data.cookieChoice === "accept" ? "accept" : "reject",
     };
   }
 
@@ -78,11 +79,13 @@ export function createSettingsStore({ dir, safeStorage, fs: fsImpl = fs }) {
         voiceId: voiceId || "eve",
         expanded: Boolean(expanded),
         windowPosition: windowPosition ?? null,
+        cookieChoice: "reject",
       };
       await writeSettings(next);
       const cipher = safeStorage.encryptString(apiKey.trim());
       const buf = Buffer.isBuffer(cipher) ? cipher : Buffer.from(cipher);
       await fsImpl.writeFile(secretPath, buf);
+      await fsImpl.chmod(secretPath, 0o600);
       return next;
     },
     async update(partial, dictionary) {
@@ -91,6 +94,7 @@ export function createSettingsStore({ dir, safeStorage, fs: fsImpl = fs }) {
         voiceId: "eve",
         expanded: false,
         windowPosition: null,
+        cookieChoice: "reject",
       };
       if (partial.agentName != null) {
         const check = validateAgentName(partial.agentName, dictionary);
@@ -100,6 +104,9 @@ export function createSettingsStore({ dir, safeStorage, fs: fsImpl = fs }) {
       if (partial.voiceId) current.voiceId = String(partial.voiceId);
       if (typeof partial.expanded === "boolean") current.expanded = partial.expanded;
       if (partial.windowPosition) current.windowPosition = partial.windowPosition;
+      if (partial.cookieChoice === "accept" || partial.cookieChoice === "reject") {
+        current.cookieChoice = partial.cookieChoice;
+      }
       await writeSettings(current);
       return current;
     },

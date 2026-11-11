@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Surf",
+  "version": "0.1.0",
+  "description": "Lets Surf act on the page in front of you.",
+  "permissions": ["tabs", "scripting", "storage", "clipboardRead", "clipboardWrite"],
+  "host_permissions": ["http://127.0.0.1/*", "http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Surf"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

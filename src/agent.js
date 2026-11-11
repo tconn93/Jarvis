@@ -1,11 +1,12 @@
 import { createDesktop } from "./tools/desktop.js";
+import { BROWSER_PROMPT, BROWSER_TOOL_DEFS, createBrowserTools } from "./tools/browser.js";
 
 export const AGENT_MODEL = "grok-4.7";
 export const MAX_ROUNDS = 8;
 
-export const AGENT_PROMPT = `You control this Windows PC with the provided tools only.
-Do not invent shell commands, file paths, or key chords that open the Run dialog.
-launch_app takes an installed app's Start menu display name, never a path.
+export const AGENT_PROMPT = `You control this computer with the provided tools only.
+Do not invent shell commands, file paths, or key chords that open a run dialog or a terminal.
+launch_app takes an installed app's display name (the Start menu name on Windows, the application name on Linux), never a path.
 Closing a window uses close_window, not Alt+F4.
 When the command is done, call finish with one or two spoken sentences.
 If a tool fails, try another control once, then finish with a short failure.`;
@@ -26,7 +27,7 @@ export const DESKTOP_TOOL_DEFS = [
   FUNCTION("list_windows", "List visible top-level windows.", {}, []),
   FUNCTION(
     "launch_app",
-    "Start an installed app by its Start menu display name.",
+    "Start an installed app by its display name. Never a file path.",
     { name: { type: "string" } },
     ["name"],
   ),
@@ -120,6 +121,7 @@ export async function runToolLoop({
   signal,
   maxRounds = MAX_ROUNDS,
   call,
+  browser,
 }) {
   const tools =
     desktop ??
@@ -129,6 +131,15 @@ export async function runToolLoop({
       onStep,
       confirm,
     });
+  const browserTools = browser
+    ? createBrowserTools({
+        ...browser,
+        confirm: browser.confirm ?? confirm,
+        log: browser.log ?? log,
+        onStep: browser.onStep ?? onStep,
+      })
+    : null;
+  const toolDefs = browserTools ? [...DESKTOP_TOOL_DEFS, ...BROWSER_TOOL_DEFS] : DESKTOP_TOOL_DEFS;
   const dispatch = {
     list_windows: () => tools.list_windows(),
     launch_app: (args) => tools.launch_app(args),
@@ -139,13 +150,14 @@ export async function runToolLoop({
     press_keys: (args) => tools.press_keys(args),
     read_text: (args) => tools.read_text(args),
     close_window: (args) => tools.close_window(args),
+    ...(browserTools ?? {}),
   };
 
   let body = {
     model: AGENT_MODEL,
-    tools: DESKTOP_TOOL_DEFS,
+    tools: toolDefs,
     input: [
-      { role: "system", content: AGENT_PROMPT },
+      { role: "system", content: browserTools ? `${AGENT_PROMPT}\n\n${BROWSER_PROMPT}` : AGENT_PROMPT },
       {
         role: "user",
         content: `Foreground window: ${foregroundTitle || "unknown"}\n\n${transcript}`,
@@ -173,6 +185,13 @@ export async function runToolLoop({
     const results = await Promise.all(
       turn.calls.map(async (callItem) => {
         const args = parseArgs(callItem.arguments);
+        if (String(callItem.name).startsWith("browser_") && !browserTools) {
+          return {
+            call_id: callItem.call_id,
+            output: JSON.stringify({ ok: false, error: "The browser is not connected." }),
+            disconnected: true,
+          };
+        }
         const fn = dispatch[callItem.name];
         if (!fn) {
           return {
@@ -186,15 +205,19 @@ export async function runToolLoop({
           call_id: callItem.call_id,
           output: JSON.stringify(result),
           cancelled: Boolean(result?.cancelled),
+          missingPlace: Boolean(result?.missingPlace),
+          disconnected: Boolean(result?.disconnected),
         };
       }),
     );
     if (results.some((result) => result.cancelled)) return "Cancelled.";
+    if (results.some((result) => result.missingPlace)) return "The place was missing.";
+    if (results.some((result) => result.disconnected)) return "The browser is not connected.";
     if (round === maxRounds) return "I stopped before finishing.";
 
     body = {
       model: AGENT_MODEL,
-      tools: DESKTOP_TOOL_DEFS,
+      tools: toolDefs,
       previous_response_id: turn.id,
       input: results.map((result) => ({
         type: "function_call_output",

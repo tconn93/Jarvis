@@ -17,6 +17,9 @@ const logEl = document.getElementById("log");
 const stopEl = document.getElementById("stop");
 const renameEl = document.getElementById("rename");
 const voiceEl = document.getElementById("voice");
+const browserState = document.getElementById("browser-state");
+const pairCode = document.getElementById("pair-code");
+const pairButton = document.getElementById("pair");
 const player = document.getElementById("player");
 
 let lastPlay = 0;
@@ -69,6 +72,16 @@ function render(state) {
   if (document.activeElement !== voiceEl) voiceEl.value = state.voiceId || "eve";
   setupError.textContent = state.error || "";
   stopEl.disabled = state.status !== "working" && state.status !== "waiting for yes";
+  const browser = state.browser || { connected: false, code: "" };
+  browserState.textContent = browser.connected ? "Browser connected" : "Browser disconnected";
+  if (browser.code) {
+    pairCode.hidden = false;
+    pairCode.textContent = browser.code;
+  } else {
+    pairCode.hidden = true;
+    pairCode.textContent = "";
+  }
+  pairButton.textContent = browser.connected ? "Disconnect browser" : "Pair browser";
 
   if (state.play && state.play.id !== lastPlay) {
     lastPlay = state.play.id;
@@ -105,6 +118,12 @@ document.getElementById("rename-form").addEventListener("submit", (event) => {
   event.preventDefault();
   surf.rename(renameEl.value);
   surf.setVoice?.(voiceEl.value);
+});
+
+pairButton.addEventListener("click", () => {
+  const connected = browserState.textContent === "Browser connected";
+  if (connected) surf.disconnectBrowser?.();
+  else surf.pairBrowser?.();
 });
 
 surf.onState(render);

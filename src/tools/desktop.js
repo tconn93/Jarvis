@@ -1,14 +1,21 @@
+import { existsSync, symlinkSync } from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
 const RISKY =
   /\b(delete|remove|send|pay|purchase|buy|checkout)\b|\bplace\s+order\b/i;
 
-const BLOCKED_CHORDS = new Set(["win+r", "win+x", "alt+f4"]);
+const BLOCKED_CHORDS = new Set(["win+r", "win+x", "alt+f4", "ctrl+alt+t", "alt+f2"]);
 
 export function isRawPath(value) {
   const text = String(value ?? "").trim();
   if (!text) return true;
   if (/[\\/]/.test(text)) return true;
+  if (text.startsWith("~")) return true;
   if (/^[a-zA-Z]:/.test(text)) return true;
-  if (/\.(exe|bat|cmd|com|ps1|lnk)$/i.test(text)) return true;
+  if (/\.(exe|bat|cmd|com|ps1|lnk|sh|desktop|appimage|bin)$/i.test(text)) return true;
   return false;
 }
 
@@ -155,6 +162,36 @@ export function createDesktop({ call, log, onStep, confirm }) {
   };
 }
 
+export function resolveAgentDesktop() {
+  try {
+    const root = path.dirname(require.resolve("agent-desktop/package.json"));
+    const binDir = path.join(root, "bin");
+    const file =
+      process.platform === "win32"
+        ? `agent-desktop-win32-${process.arch}.exe`
+        : `agent-desktop-${process.platform}-${process.arch}`;
+    const binary = path.join(binDir, file);
+    if (existsSync(binary)) return binary;
+  } catch {
+    /* the package is not installed beside this file */
+  }
+  return process.platform === "win32" ? "agent-desktop.cmd" : "agent-desktop";
+}
+
+function ensureLinuxClipboardHelper(binary) {
+  if (process.platform !== "linux" || !path.isAbsolute(binary)) return;
+  const dir = path.dirname(binary);
+  const expected = path.join(dir, "agent-desktop-linux-clipboard-owner");
+  if (existsSync(expected)) return;
+  const suffixed = path.join(dir, `agent-desktop-linux-clipboard-owner-linux-${process.arch}`);
+  if (!existsSync(suffixed)) return;
+  try {
+    symlinkSync(suffixed, expected);
+  } catch {
+    /* a later install can place the helper */
+  }
+}
+
 function encodeMessage(message) {
   const json = JSON.stringify(message);
   return `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`;
@@ -162,13 +199,20 @@ function encodeMessage(message) {
 
 export function createMcpSession({
   spawn,
-  command = "agent-desktop",
+  command = resolveAgentDesktop(),
 } = {}) {
   let child = null;
   let buffer = Buffer.alloc(0);
   let nextId = 1;
   const pending = new Map();
   let toolNames = [];
+  let failed = null;
+
+  function failAll(error) {
+    failed = failed ?? error;
+    for (const waiter of pending.values()) waiter.reject(failed);
+    pending.clear();
+  }
 
   function write(message) {
     child.stdin.write(encodeMessage(message));
@@ -206,6 +250,7 @@ export function createMcpSession({
   }
 
   function send(method, params) {
+    if (failed) return Promise.reject(failed);
     const id = nextId;
     nextId += 1;
     return new Promise((resolve, reject) => {
@@ -225,14 +270,16 @@ export function createMcpSession({
       return ["mcp"];
     },
     async start() {
-      child = spawn(command, ["mcp"], { stdio: ["pipe", "pipe", "pipe"] });
+      ensureLinuxClipboardHelper(command);
+      child = spawn(command, ["mcp"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      child.on?.("error", (error) => failAll(error));
       child.stdout.on("data", onData);
       child.stderr?.on?.("data", () => {});
       child.on?.("exit", () => {
-        for (const waiter of pending.values()) {
-          waiter.reject(new Error("agent-desktop exited"));
-        }
-        pending.clear();
+        failAll(new Error("agent-desktop exited"));
       });
       await send("initialize", {
         protocolVersion: "2024-11-05",

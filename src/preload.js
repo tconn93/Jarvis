@@ -18,5 +18,7 @@ contextBridge.exposeInMainWorld("surf", {
   rename: (name) => ipcRenderer.invoke("rename", name),
   setVoice: (voiceId) => ipcRenderer.invoke("set-voice", voiceId),
   playbackEnded: (id) => ipcRenderer.invoke("playback-ended", id),
+  pairBrowser: () => ipcRenderer.invoke("pair-browser"),
+  disconnectBrowser: () => ipcRenderer.invoke("disconnect-browser"),
   quit: () => ipcRenderer.invoke("quit"),
 });

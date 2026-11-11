@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Surf</title>
+    <style>
+      body { margin: 0; width: 240px; font: 14px "Segoe UI", sans-serif; background: #101614; color: #e7f0ea; }
+      main { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+      label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8ea399; }
+      input { background: #17211c; color: #e7f0ea; border: 1px solid #2a3a32; border-radius: 8px; padding: 8px; }
+      button { background: #d6e27a; color: #1a2410; border: 0; border-radius: 8px; min-height: 36px; font-weight: 650; }
+      #state { margin: 0; color: #8ea399; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p id="state">Disconnected</p>
+      <label>Pairing code <input id="code" autocomplete="off" maxlength="12" /></label>
+      <button id="pair" type="button">Pair</button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

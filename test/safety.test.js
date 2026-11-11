@@ -6,6 +6,7 @@ import {
   createMcpSession,
   isRawPath,
   isRejectedChord,
+  resolveAgentDesktop,
 } from "../src/tools/desktop.js";
 
 function desktopWith(spy) {
@@ -18,11 +19,24 @@ function desktopWith(spy) {
   });
 }
 
+test("the desktop helper is the native binary for this operating system", () => {
+  const binary = resolveAgentDesktop();
+  if (process.platform === "win32") {
+    assert.match(binary, /agent-desktop-win32-.+\.exe$/);
+  } else if (process.platform === "linux") {
+    assert.match(binary, /agent-desktop-linux-/);
+  } else {
+    assert.match(binary, /agent-desktop/);
+  }
+});
+
 test("launch_app rejects a path and does not call agent-desktop", async () => {
   const spy = [];
   const desktop = desktopWith(spy);
   assert.equal(isRawPath("C:\\Windows\\notepad.exe"), true);
-  const result = await desktop.launch_app({ name: "C:\\Windows\\notepad.exe" });
+  assert.equal(isRawPath("/usr/bin/gedit"), true);
+  assert.equal(isRawPath("~/bin/app"), true);
+  const result = await desktop.launch_app({ name: "/usr/bin/gedit" });
   assert.equal(result.ok, false);
   assert.equal(spy.length, 0);
   const ok = await desktop.launch_app({ name: "Notepad" });
@@ -33,7 +47,7 @@ test("launch_app rejects a path and does not call agent-desktop", async () => {
 test("press_keys rejects Win+R, Win+X, and Alt+F4", async () => {
   const spy = [];
   const desktop = desktopWith(spy);
-  for (const keys of ["Win+R", "Windows+X", "Alt+F4"]) {
+  for (const keys of ["Win+R", "Windows+X", "Alt+F4", "Ctrl+Alt+T", "Alt+F2", "Super+R"]) {
     assert.equal(isRejectedChord(keys), true);
     const result = await desktop.press_keys({ keys });
     assert.equal(result.ok, false);
