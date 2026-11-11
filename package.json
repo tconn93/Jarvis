@@ -1,0 +1,21 @@
+{
+  "name": "surf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@picovoice/pvrecorder-node": "^1.2.9",
+    "agent-desktop": "^1.2.0",
+    "electron": "^45.3.0",
+    "openai": "^7.55.0",
+    "vosk": "^0.3.39"
+  }
+}
